@@ -21,9 +21,6 @@
   .header-btn { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); background: transparent; border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
   .header-btn:hover { color: var(--text); border-color: var(--muted); }
   .header-btn.connected { color: var(--accent); border-color: rgba(168,245,66,0.3); }
-  .length-toggle { display: flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
-  .length-btn { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); background: transparent; border: none; padding: 4px 8px; cursor: pointer; transition: all 0.15s; }
-  .length-btn.active { background: rgba(168,245,66,0.12); color: var(--accent); }
   .sidebar-toggle { display: none; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); padding: 4px 8px; cursor: pointer; font-size: 14px; }
   .main { display: flex; flex: 1; overflow: hidden; position: relative; }
   .sidebar { width: 240px; border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; transition: transform 0.25s ease; }
@@ -140,10 +137,6 @@
     <div class="logo"><div class="logo-dot"></div>CivilMind</div>
   </div>
   <div class="header-right">
-    <div class="length-toggle">
-      <button class="length-btn active" id="btnShort" onclick="setLength('short')">Short</button>
-      <button class="length-btn" id="btnDetailed" onclick="setLength('detailed')">Detailed</button>
-    </div>
     <button class="header-btn connected" id="connectBtn">✅ Connected</button>
   </div>
 </header>
@@ -197,7 +190,6 @@
   const SESSIONS_KEY = 'civilmind_sessions';
 
   let isLoading = false;
-  let answerLength = 'short';
   let conversationHistory = [];
   let sessions = {};
   let activeSessionId = null;
@@ -238,12 +230,6 @@
       html += `<div class="evidence-block"><div class="evidence-label">📄 Evidence</div>${quotesHtml}</div>`;
     }
     return html;
-  }
-
-  function setLength(val) {
-    answerLength = val;
-    document.getElementById('btnShort').classList.toggle('active', val === 'short');
-    document.getElementById('btnDetailed').classList.toggle('active', val === 'detailed');
   }
 
   function toggleSidebar() {
@@ -441,14 +427,11 @@
     input.value = ''; autoResize(input);
     addMessage('user', question, null);
     addTyping();
-    const lengthInstruction = answerLength === 'detailed'
-      ? 'Give a thorough, detailed answer with all relevant clauses and considerations.'
-      : 'Give a concise, practical answer. Be direct and specific.';
     try {
       const res = await fetch(`${BACKEND_URL}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history: conversationHistory, length: lengthInstruction })
+        body: JSON.stringify({ question, history: conversationHistory })
       });
       if (!res.ok) throw new Error(`status:${res.status}`);
       const data = await res.json();

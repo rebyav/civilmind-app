@@ -170,6 +170,15 @@
       </div>
     </div>
     <div class="input-area">
+      <div id="docBanner" style="display:none;align-items:center;justify-content:space-between;padding:8px 14px;margin-bottom:8px;background:rgba(168,245,66,0.06);border:1px solid rgba(168,245,66,0.2);border-radius:8px;">
+        <span id="docBannerName" style="font-size:12px;color:var(--accent);font-family:'DM Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <span onclick="clearDoc()" style="font-size:11px;color:var(--muted);cursor:pointer;margin-left:10px;flex-shrink:0;">✕ Clear</span>
+      </div>
+      <div id="uploadArea" style="display:none;align-items:center;gap:8px;margin-bottom:6px;">
+        <input type="file" id="fileInput" accept=".pdf" style="display:none" onchange="handleFileUpload(event)"/>
+        <button id="uploadBtn" onclick="document.getElementById('fileInput').click()" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);background:transparent;border:1px solid var(--border);padding:4px 10px;border-radius:4px;cursor:pointer;">📎 Upload Doc</button>
+        <span style="font-size:10px;color:var(--muted)">Admin mode — text-based PDFs only</span>
+      </div>
       <div class="input-wrapper">
         <textarea id="questionInput" placeholder="Ask an engineering question..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
         <button class="send-btn" id="sendBtn" onclick="sendQuestion()">
@@ -185,14 +194,17 @@
 
 <script>
   const BACKEND_URL = 'https://civilmind-production.up.railway.app';
-  const CORRECT_PIN = '2580';
-  const PIN_KEY = 'civilmind_pin_ok';
+  const PIN_STANDARD = '2580';
+  const PIN_ADMIN = '9998';
   const SESSIONS_KEY = 'civilmind_sessions';
 
   let isLoading = false;
   let conversationHistory = [];
   let sessions = {};
   let activeSessionId = null;
+  let uploadedDocText = null;
+  let uploadedDocName = null;
+  let isAdmin = false;
 
   function renderMarkdown(text) {
     const evidenceSplit = text.split(/\n?---\n📄 EVIDENCE\n/);
@@ -244,9 +256,12 @@
 
   function checkPin() {
     const input = document.getElementById('pinInput').value.trim();
-    if (input === CORRECT_PIN) {
-      localStorage.setItem(PIN_KEY, '1');
+    if (input === PIN_STANDARD || input === PIN_ADMIN) {
+      isAdmin = input === PIN_ADMIN;
       document.getElementById('pinModal').style.display = 'none';
+      if (isAdmin) {
+        document.getElementById('uploadArea').style.display = 'flex';
+      }
     } else {
       document.getElementById('pinError').style.display = 'block';
       document.getElementById('pinInput').value = '';
@@ -427,11 +442,19 @@
     input.value = ''; autoResize(input);
     addMessage('user', question, null);
     addTyping();
+
+    const isFirstMessage = conversationHistory.length === 0;
+
     try {
       const res = await fetch(`${BACKEND_URL}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history: conversationHistory })
+        body: JSON.stringify({
+          question,
+          history: conversationHistory,
+          doc_text: isFirstMessage && uploadedDocText ? uploadedDocText : null,
+          doc_name: isFirstMessage && uploadedDocName ? uploadedDocName : null
+        })
       });
       if (!res.ok) throw new Error(`status:${res.status}`);
       const data = await res.json();
@@ -452,14 +475,53 @@
     document.getElementById('sendBtn').disabled = false;
   }
 
-  window.addEventListener('load', () => {
-    const pinOk = localStorage.getItem(PIN_KEY);
-    if (pinOk) {
-      document.getElementById('pinModal').style.display = 'none';
-    } else {
-      document.getElementById('pinModal').style.display = 'flex';
-      setTimeout(() => document.getElementById('pinInput').focus(), 100);
+  async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    const uploadBtn = document.getElementById('uploadBtn');
+    uploadBtn.textContent = '⏳';
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= Math.min(pdf.numPages, 30); i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        fullText += content.items.map(item => item.str).join(' ') + '\n';
+      }
+      uploadedDocText = fullText.slice(0, 15000);
+      uploadedDocName = file.name;
+
+      document.getElementById('docBanner').style.display = 'flex';
+      document.getElementById('docBannerName').textContent = `📋 ${file.name}`;
+      uploadBtn.textContent = '📎';
+      uploadBtn.style.color = 'var(--accent)';
+
+      addMessage('ai', `Document loaded: **${file.name}**\n\nI'll use this as context for your questions in this session.`, []);
+    } catch(e) {
+      uploadBtn.textContent = '📎';
+      addMessage('ai', 'Could not read that file. Make sure it is a text-based PDF.', []);
     }
+    event.target.value = '';
+  }
+
+  function clearDoc() {
+    uploadedDocText = null;
+    uploadedDocName = null;
+    conversationHistory = [];
+    document.getElementById('docBanner').style.display = 'none';
+    document.getElementById('uploadBtn').style.color = '';
+    document.getElementById('uploadBtn').textContent = '📎';
+  }
+
+  window.addEventListener('load', () => {
+    document.getElementById('pinModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('pinInput').focus(), 100);
     loadSessions();
   });
 </script>
